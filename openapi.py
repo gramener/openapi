@@ -1,6 +1,16 @@
+import re
 import json
 import gramex
+from textwrap import dedent
 from gramex.handlers import BaseHandler
+
+
+def url_name(pattern):
+    # Spec name is the last URL path that has alphabets
+    names = [part for part in pattern.split('/') if any(c.isalnum() for c in part)]
+    # Capitalize. url-like_this becomes "Url Like This"
+    names = [word.capitalize() for word in re.split(r'[\s\-_]', ' '.join(names))]
+    return ' '.join(names)
 
 
 class OpenAPI(BaseHandler):
@@ -25,19 +35,19 @@ class OpenAPI(BaseHandler):
         # Loop through every function and get the default specs
         spec['paths'] = {}
         for key, config in gramex.conf['url'].items():
-            # TODO: Normalize the pattern, e.g. /./docs -> /docs
+            # Normalize the pattern, e.g. /./docs -> /docs
+            pattern = config['pattern'].replace('/./', '/')
             # TODO: Handle wildcards, e.g. /(.*) -> / with an arg
-            spec['paths'][config['pattern']] = {
-              'summary': '...',
-              'description': '...',
-              'get': {}
+            info = spec['paths'][pattern] = {
+                'get': {
+                    'summary': f'{url_name(pattern)}: {config["handler"]}'
+                },
             }
             if config['handler'] == 'FunctionHandler':
-                # TODO: Get docstring from here
-                print(gramex.service.url[key].handler_class.info['function'].__doc__)
+                doc = gramex.service.url[key].handler_class.info['function'].__doc__
+                info['get'].setdefault('description', dedent(doc))
 
         # TODO: Deep merge the defaults
-
         self.write(json.dumps(spec))
 
 

@@ -11,8 +11,20 @@ url:
         - url: $YAMLURL     # Default to $YAMLURL
           description: Optional server description, e.g. Main (production) server
 
-  test_function:
-    pattern: /$YAMLURL/test_function
+  funcexpr:
+    pattern: /$YAMLURL/funcexpr
     handler: FunctionHandler
     kwargs:
       function: openapi.test_function(handler)
+
+  func:
+    pattern: /$YAMLURL/func
+    handler: FunctionHandler
+    kwargs:
+      function: openapi.test_function
+
+  expr:
+    pattern: /$YAMLURL/expr
+    handler: FunctionHandler
+    kwargs:
+      function: 2 + 3
