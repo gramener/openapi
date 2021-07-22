@@ -1,7 +1,10 @@
 import re
 import json
 import gramex
+import inspect
+from typing_extensions import Annotated
 from textwrap import dedent
+from gramex.transforms import handler
 from gramex.handlers import BaseHandler
 
 
@@ -44,15 +47,33 @@ class OpenAPI(BaseHandler):
                 },
             }
             if config['handler'] == 'FunctionHandler':
-                doc = gramex.service.url[key].handler_class.info['function'].__doc__
+                function = gramex.service.url[key].handler_class.info['function']
+                doc = function.__doc__
+                signature = inspect.signature(getattr(function, '__func__', function))
                 info['get'].setdefault('description', dedent(doc))
+                info['get'].setdefault('parameters', [{
+                    'in': 'query',
+                    'name': name,
+                    'description': getattr(param.annotation, '__metadata__', ('',))[0],
+                    'required': param.POSITIONAL_ONLY,
+                    # TODO: Get schema from param.annotation
+                    # 'schema': {
+                    #     'title': 'Fromdate',
+                    #     'type': 'string',
+                    #     'description': 'From date in yyyy-mm-dd format'
+                    # },
+                } for name, param in signature.parameters.items()])
 
         # TODO: Deep merge the defaults
         self.write(json.dumps(spec))
 
 
-def test_function(handler):
+@handler
+def test_function(
+    x: Annotated[int, 'First value'] = 0,
+    y: Annotated[int, 'Second value'] = 0,
+    s: str = 'Total'):
     '''
     This is a **Markdown** docstring.
     '''
-    return 'OK'
+    return f'{s}: {x + y}'
