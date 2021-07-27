@@ -2,6 +2,7 @@ import re
 import json
 import gramex
 import inspect
+from typing import List
 from typing_extensions import Annotated
 from textwrap import dedent
 from gramex.transforms import handler
@@ -49,31 +50,51 @@ class OpenAPI(BaseHandler):
             if config['handler'] == 'FunctionHandler':
                 function = gramex.service.url[key].handler_class.info['function']
                 doc = function.__doc__
-                signature = inspect.signature(getattr(function, '__func__', function))
+                signature = inspect.signature(function.__func__ or function)
                 info['get'].setdefault('description', dedent(doc))
+                for name, param in signature.parameters.items():
+                    print(param.default, type(param.default), repr(param.default))
                 info['get'].setdefault('parameters', [{
                     'in': 'query',
                     'name': name,
                     'description': getattr(param.annotation, '__metadata__', ('',))[0],
-                    'required': param.POSITIONAL_ONLY,
+                    'required': param.default is None,
+                    # TODO: Get defaults into example
                     # TODO: Get schema from param.annotation
-                    # 'schema': {
-                    #     'title': 'Fromdate',
-                    #     'type': 'string',
-                    #     'description': 'From date in yyyy-mm-dd format'
-                    # },
+                    'schema': {
+                        'title': 'Fromdate',
+                        'type': 'string',
+                        'description': 'From date in yyyy-mm-dd format'
+                    },
                 } for name, param in signature.parameters.items()])
+                info['get'].setdefault('responses', {
+                    '200': {
+                        'description': 'Successful Response',
+                        'content': {
+                            'application/json': {'schema': {}}
+                        }
+                    },
+                    '404': {
+                        'description': 'Not found'
+                    },
+                })
 
         # TODO: Deep merge the defaults
         self.write(json.dumps(spec))
 
 
 @handler
-def test_function(
-    x: Annotated[int, 'First value'] = 0,
-    y: Annotated[int, 'Second value'] = 0,
-    s: str = 'Total'):
+def test_function(li1: List[int],
+                  lf1: List[float],
+                  li2: Annotated[List[int], 'List of ints'],
+                  lf2: Annotated[List[float], 'List of floats'],
+                  li3: List[int] = [0],
+                  lf3: List[float] = [0.0],
+                  l1=[],
+                  i1: Annotated[int, 'First value'] = 0,
+                  i2: Annotated[int, 'Second value'] = 0,
+                  s1: str = 'Total'):
     '''
     This is a **Markdown** docstring.
     '''
-    return f'{s}: {x + y}'
+    return json.dumps([li1, li2, li3, lf1, lf2, lf3, l1, i1, i2, s1])
