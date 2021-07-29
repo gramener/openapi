@@ -2,10 +2,11 @@ import re
 import json
 import gramex
 import inspect
-from typing import List
+from typing import List, get_type_hints
 from typing_extensions import Annotated
 from textwrap import dedent
 from gramex.transforms import handler
+from gramex.transforms.transforms import typelist
 from gramex.handlers import BaseHandler
 
 
@@ -18,6 +19,14 @@ def url_name(pattern):
 
 
 class OpenAPI(BaseHandler):
+    types = {
+        str: 'string',
+        int: 'integer',
+        float: 'number',
+        bool: 'boolean',
+        None: 'null'
+    }
+
     def get(self):
         # TODO: Set header only if not already set in the configuration.
         # This can be handled in gramex/gramex.yaml as a default configuration.
@@ -51,22 +60,34 @@ class OpenAPI(BaseHandler):
                 function = gramex.service.url[key].handler_class.info['function']
                 doc = function.__doc__
                 signature = inspect.signature(function.__func__ or function)
+                hints = get_type_hints(function.__func__ or function)
                 info['get'].setdefault('description', dedent(doc))
+                params = []
+                info['get'].setdefault('parameters', params)
                 for name, param in signature.parameters.items():
-                    print(param.default, type(param.default), repr(param.default))
-                info['get'].setdefault('parameters', [{
-                    'in': 'query',
-                    'name': name,
-                    'description': getattr(param.annotation, '__metadata__', ('',))[0],
-                    'required': param.default is None,
-                    # TODO: Get defaults into example
-                    # TODO: Get schema from param.annotation
-                    'schema': {
-                        'title': 'Fromdate',
-                        'type': 'string',
-                        'description': 'From date in yyyy-mm-dd format'
-                    },
-                } for name, param in signature.parameters.items()])
+                    # if name in ('i1', 'l1'):
+                    #     import ipdb; ipdb.set_trace()
+                    default = '' if param.default is inspect.Parameter.empty else param.default
+                    typ, is_list = typelist(hints[name]) if name in hints else (str, False)
+                    config = {
+                        # TODO: [*] Allow header parameters
+                        'in': 'query',
+                        'name': name,
+                        'description': getattr(param.annotation, '__metadata__', ('',))[0],
+                        'required': param.default is inspect.Parameter.empty,
+                        # TODO: Get schema from param.annotation
+                        'schema': {
+                            'default': default,
+                            'type': 'array' if is_list else self.types.get(typ, 'string'),
+
+                            # 'title': 'Fromdate',
+                            # 'description': 'From date in yyyy-mm-dd format'
+                        }
+                    }
+                    if is_list:
+                        config['schema']['items'] = {'type': self.types.get(typ, 'string')}
+                    params.append(config)
+                # TODO: Automate error responses
                 info['get'].setdefault('responses', {
                     '200': {
                         'description': 'Successful Response',
