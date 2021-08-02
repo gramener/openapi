@@ -16,15 +16,20 @@ url:
     handler: FunctionHandler
     kwargs:
       function: openapi.test_function(handler)
+      methods: GET
 
   func:
     pattern: /$YAMLURL/func
     handler: FunctionHandler
     kwargs:
       function: openapi.test_function
+      methods: GET, POST
+    openapi:
+      get: ...
 
   expr:
     pattern: /$YAMLURL/expr
     handler: FunctionHandler
     kwargs:
       function: 2 + 3
+      methods: GET

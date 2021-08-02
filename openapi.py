@@ -1,11 +1,12 @@
-import re
-import json
 import gramex
 import inspect
+import json
+import numpy as np
+import re
 from typing import List, get_type_hints
 from typing_extensions import Annotated
 from textwrap import dedent
-from gramex.transforms import handler
+from gramex.transforms import handler, Header
 from gramex.transforms.transforms import typelist
 from gramex.handlers import BaseHandler
 
@@ -26,6 +27,49 @@ class OpenAPI(BaseHandler):
         bool: 'boolean',
         None: 'null'
     }
+
+    @classmethod
+    def function_spec(cls, function):
+        doc = function.__doc__
+        signature = inspect.signature(function)
+        hints = get_type_hints(function)
+        params = []
+        spec = {'description': dedent(doc), 'parameters': params}
+        for name, param in signature.parameters.items():
+            hint = hints.get(name, None)
+            typ, is_list = typelist(hints[name]) if hint else (str, False)
+            config = {
+                'in': 'header' if hint and getattr(hint, '_name', None) == 'Header' else 'query',
+                'name': name,
+                'description': getattr(param.annotation, '__metadata__', ('',))[0],
+                'schema': {}
+            }
+            params.append(config)
+            # If default is not specific, parameter is required.
+            if param.default is inspect.Parameter.empty:
+                config['required'] = True
+            else:
+                config['default'] = param.default
+            # JSON Schema uses {type: array, items: {type: integer}} for array of ints.
+            # But a simple int is {type: integer}
+            if is_list:
+                config['schema']['type'] = 'array'
+                config['schema']['items'] = {'type': cls.types.get(typ, 'string')}
+            else:
+                config['schema']['type'] = cls.types.get(typ, 'string'),
+        # TODO: Automate error responses
+        spec['responses'] = {
+            '200': {
+                'description': 'Successful Response',
+                'content': {
+                    'application/json': {'schema': {}}
+                }
+            },
+            '404': {
+                'description': 'Not found'
+            },
+        }
+        return spec
 
     def get(self):
         # TODO: Set header only if not already set in the configuration.
@@ -57,50 +101,15 @@ class OpenAPI(BaseHandler):
                 },
             }
             if config['handler'] == 'FunctionHandler':
-                function = gramex.service.url[key].handler_class.info['function']
-                doc = function.__doc__
-                signature = inspect.signature(function.__func__ or function)
-                hints = get_type_hints(function.__func__ or function)
-                info['get'].setdefault('description', dedent(doc))
-                params = []
-                info['get'].setdefault('parameters', params)
-                for name, param in signature.parameters.items():
-                    # if name in ('i1', 'l1'):
-                    #     import ipdb; ipdb.set_trace()
-                    default = '' if param.default is inspect.Parameter.empty else param.default
-                    typ, is_list = typelist(hints[name]) if name in hints else (str, False)
-                    config = {
-                        # TODO: [*] Allow header parameters
-                        'in': 'query',
-                        'name': name,
-                        'description': getattr(param.annotation, '__metadata__', ('',))[0],
-                        'required': param.default is inspect.Parameter.empty,
-                        # TODO: Get schema from param.annotation
-                        'schema': {
-                            'default': default,
-                            'type': 'array' if is_list else self.types.get(typ, 'string'),
+                cls = gramex.service.url[key].handler_class
+                function = cls.info['function']
+                fnspec = self.function_spec(function.__func__ or function)
+                fnspec['summary'] = f'{url_name(pattern)}: {config["handler"]}'
+                default_methods = 'GET POST PUT DELETE PATCH OPTIONS'.split()
+                for method in getattr(cls, '_http_methods', default_methods):
+                    info[method.lower()] = fnspec
 
-                            # 'title': 'Fromdate',
-                            # 'description': 'From date in yyyy-mm-dd format'
-                        }
-                    }
-                    if is_list:
-                        config['schema']['items'] = {'type': self.types.get(typ, 'string')}
-                    params.append(config)
-                # TODO: Automate error responses
-                info['get'].setdefault('responses', {
-                    '200': {
-                        'description': 'Successful Response',
-                        'content': {
-                            'application/json': {'schema': {}}
-                        }
-                    },
-                    '404': {
-                        'description': 'Not found'
-                    },
-                })
-
-        # TODO: Deep merge the defaults
+        # TODO: Deep merge the defaults.
         self.write(json.dumps(spec))
 
 
@@ -114,8 +123,11 @@ def test_function(li1: List[int],
                   l1=[],
                   i1: Annotated[int, 'First value'] = 0,
                   i2: Annotated[int, 'Second value'] = 0,
-                  s1: str = 'Total'):
+                  s1: str = 'Total',
+                  n1: np.int = 0,
+                  n2: np.int64 = 0,
+                  h: Header[str] = ''):
     '''
     This is a **Markdown** docstring.
     '''
-    return json.dumps([li1, li2, li3, lf1, lf2, lf3, l1, i1, i2, s1])
+    return json.dumps([li1, li2, li3, lf1, lf2, lf3, l1, i1, i2, s1, h])
