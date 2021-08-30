@@ -25,7 +25,10 @@ url:
       function: openapi.test_function
       methods: GET, POST
     openapi:
-      get: ...
+      get:
+        responses:
+          '400':
+            description: You served a bad request
 
   expr:
     pattern: /$YAMLURL/expr
